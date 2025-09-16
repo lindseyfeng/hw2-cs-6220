@@ -1,187 +1,88 @@
-import os
-import re
-import json
-import random
 import argparse
-import unicodedata
-from typing import List, Dict
-from collections import Counter
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import json
 
-import datasets
-from transformers import set_seed
-from vllm import LLM, SamplingParams
-
-###############################################################################
-#                               Format Prompts
-###############################################################################
-
-def format_prompt(question: str, prompt_template: str = None) -> str:
+# -----------------------------
+# CoT PROMPT
+# -----------------------------
+def cot_prompt(query, few_shot_examples=None):
     """
-    Example: a short chain-of-thought style prompt or any custom style
-    you prefer for Alpaca Eval.
+    Build a chain-of-thought prompt for GSM8K.
     """
-    if prompt_template:
-        return prompt_template.replace("{question}", question)
-    return f"""
-Instruction: {question}
-"""
+    prompt = ""
+    if few_shot_examples:
+        for ex in few_shot_examples:
+            prompt += f"Q: {ex['question']}\nReasoning: {ex['reasoning']}\nAnswer: {ex['answer']}\n\n"
+    prompt += f"Q: {query}\nLet's think step by step:"
+    return prompt
 
-def format_prompt_noncot(question: str, prompt_template: str = None) -> str:
-    """
-    Example: a direct prompt (no chain-of-thought).
-    """
-    if prompt_template:
-        return prompt_template.replace("{question}", question)
-    return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.
+# -----------------------------
+# INFERENCE FUNCTION
+# -----------------------------
+def infer(model, tokenizer, prompt, max_tokens=200, temperature=0.7, top_p = 1):
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            temperature=temperature,
+            do_sample=True,
+            top_p=top_p
+        )
+    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return text
 
-Instruction: {question}
-"""
+# -----------------------------
+# MAIN
+# -----------------------------
+def main(args):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-###############################################################################
-#                            Generation Helper (vLLM)
-###############################################################################
+    # Load model
+    print(f"Loading model {args.model_name}...")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    model = AutoModelForCausalLM.from_pretrained(args.model_name).to(device)
+    model.eval()
 
-def vllm_generate(
-    model: LLM,
-    prompt: str,
-    n_responses: int,
-    max_length: int = 512,
-    temperature: float = 1.0,
-    top_p: float = 1.0,
-    do_sample: bool = False
-) -> str:
-    """
-    A simple wrapper around vLLM's model.generate() call.
-    Returns just the first generation's text (you can adapt if you want multiple).
-    """
-    # Build sampling params
-    sampling_params = SamplingParams(
-        n=n_responses, 
-        temperature=temperature if do_sample else 0.0,
-        max_tokens=max_length,
-        top_p=top_p if do_sample else 1.0,
-    )
-    request_outputs = model.generate([prompt], sampling_params)
-    
-    # Grab the first RequestOutput (one request == one prompt)
-    request_output = request_outputs[0]
+    # Load queries
+    with open(args.query_file, "r") as f:
+        queries = json.load(f)  # Expecting list of dicts: {"question":..., "answer":...}
 
-    # request_output.outputs is a list of CompletionOutput objects
-    completions = request_output.outputs
-
-    if n_responses == 1:
-        # Return the single completion's text
-        return completions[0].text
-    else:
-        # Return a list of all completion texts
-        return [comp.text for comp in completions]
-
-###############################################################################
-#                            Main Generation Logic
-###############################################################################
-
-def batch_generate_responses(args):
-    """
-    Load the Alpaca Eval dataset and generate vLLM completions for each example.
-    """
-
-    # 1. Load the Alpaca Eval dataset
-    dataset = datasets.load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")
-    eval_data = dataset["eval"]
-
-    # If a maximum number of samples was requested, slice the data
-    if args.max_samples:
-        eval_data = eval_data.select(range(min(args.max_samples, len(eval_data))))
-
-    # 2. Build prompts
-    if args.no_cot:
-        # Non-chain-of-thought style prompts
-        prompts = [format_prompt_noncot(item["instruction"], args.prompt_template) for item in eval_data]
-    else:
-        # Chain-of-thought style prompts
-        prompts = [format_prompt(item["instruction"], args.prompt_template) for item in eval_data]
-
-    # 3. Initialize the vLLM model
-    print(f"Loading vLLM model {args.model_name}...")
-    model = LLM(args.model_name, dtype="auto")
-
-    # If you want reproducible sampling, set the seed
-    set_seed(args.seed)
-    random.seed(args.seed)
-
-    print(f"Generating responses for {len(prompts)} samples...")
     results = []
 
-    for i, prompt in enumerate(prompts):
-        # Generate a single response for each prompt using vLLM
-        completion = vllm_generate(
-            model=model,
-            prompt=prompt,
-            n_responses=args.n_responses,  # you'll define n_responses in parse_args
-            max_length=args.max_length,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            do_sample=args.do_sample
-        )
-
-        # Store the completion
+    # Inference loop
+    for q in queries:
+        prompt = cot_prompt(q["question"])
+        pred_text = infer(model, tokenizer, prompt, max_tokens=args.max_length, temperature=args.temperature)
+        pred_answer = pred_text.split("Answer:")[-1].strip() if "Answer:" in pred_text else pred_text.strip()
         results.append({
-            "instruction": eval_data[i]["instruction"],
-            "output": completion
+            "question": q["question"],
+            "ground_truth": q["answer"],
+            "prediction": pred_answer
         })
 
-        # Simple progress log
-        if (i + 1) % args.log_interval == 0:
-            print(f"Processed {i+1} / {len(prompts)}...")
+    # Evaluation
+    for r in results:
+        correct = r["prediction"].lower() == r["ground_truth"].lower()
+        print(f"Q: {r['question']}")
+        print(f"GT: {r['ground_truth']}")
+        print(f"Prediction: {r['prediction']} -> {'Correct' if correct else 'Wrong'}")
+        print("-"*50)
 
-    # 4. Save results if requested
-    if args.save_results:
-        os.makedirs(os.path.dirname(args.save_results), exist_ok=True)
-        with open(args.save_results, 'w') as f:
-            json.dump(results, f, indent=2)
+    # Save results
+    with open("gsm8k_cot_results.json", "w") as f:
+        json.dump(results, f, indent=2)
 
-    print("Done.")
-    return results
 
-###############################################################################
-#                              Argument Parsing
-###############################################################################
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description='Generate responses for Alpaca Eval dataset using a vLLM model.'
-    )
-    parser.add_argument('--model_name', type=str, default="gpt2", 
-                        help='vLLM model name or path (e.g. gpt2).')
-    parser.add_argument('--max_samples', type=int, default=None, 
-                        help='Maximum number of samples to generate.')
-    parser.add_argument('--temperature', type=float, default=1.0, 
-                        help='Temperature for sampling.')
-    parser.add_argument('--do_sample', action='store_true', 
-                        help='Use sampling. If false, temperature=0.0 is greedy.')
-    parser.add_argument('--no_cot', action='store_true', 
-                        help='Whether to use a no-CoT prompt style.')
-    parser.add_argument('--top_p', type=float, default=1.0, 
-                        help='Top-p for nucleus sampling.')
-    parser.add_argument('--max_length', type=int, default=512, 
-                        help='Max tokens for each generation.')
-    parser.add_argument('--log_interval', type=int, default=10, 
-                        help='Logging interval.')
-    parser.add_argument('--prompt_template', type=str, default=None, 
-                        help='Custom prompt template with {question} placeholder.')
-    parser.add_argument('--save_results', type=str, default=None, 
-                        help='Path to save results JSON.')
-    parser.add_argument('--seed', type=int, default=42, 
-                        help='Random seed.')
-    # Add n_responses to control how many completions per prompt
-    parser.add_argument('--n_responses', type=int, default=1, 
-                        help='Number of responses to generate for each prompt.')
-    return parser.parse_args()
-
-###############################################################################
-#                                  Main
-###############################################################################
-
+# -----------------------------
+# ARGPARSE
+# -----------------------------
 if __name__ == "__main__":
-    args = parse_args()
-    batch_generate_responses(args)
+    parser = argparse.ArgumentParser(description="Batch inference for GSM8K using CoT.")
+    parser.add_argument("--model_name", type=str, required=True, help="Huggingface model name")
+    parser.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
+    parser.add_argument("--max_length", type=int, default=200, help="Maximum tokens to generate")
+    args = parser.parse_args()
+    
+    main(args)
