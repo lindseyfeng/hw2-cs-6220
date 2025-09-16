@@ -80,6 +80,8 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(args.model_name).to(device)
     model.eval()
+    if tokenizer.pad_token_id is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
     # Load queries
     with open("gsm8k.json", "r") as f:
@@ -91,11 +93,10 @@ def main(args):
         prompt = cot_prompt(q["question"], args.cot)
         
         pred_text, answer = infer(model, tokenizer, prompt, max_tokens=args.max_length, temperature=args.temperature, top_p = args.top_p )
-        pred_answer = pred_text.split("Answer:")[-1].strip() if "Answer:" in pred_text else pred_text.strip()
         results.append({
             "question": q["question"],
             "ground_truth": q["answer"],
-            "prediction": pred_answer, 
+            "prediction": pred_text, 
             "final_answer" : answer, 
             "is_correct" : answer == q["final_answer"]
         })
