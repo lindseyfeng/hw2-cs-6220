@@ -6,36 +6,72 @@ import json
 # -----------------------------
 # CoT PROMPT
 # -----------------------------
-def cot_prompt(query, few_shot_examples=None):
+def cot_prompt(question: str, cot: bool) -> str:
     """
-    Build a chain-of-thought prompt for GSM8K.
+    Load a manual prompt template from file, replace {question} with the actual question,
+    and enforce ###ANSWER format at the end.
     """
-    prompt = ""
-    if few_shot_examples:
-        for ex in few_shot_examples:
-            prompt += f"Q: {ex['question']}\nReasoning: {ex['reasoning']}\nAnswer: {ex['answer']}\n\n"
-    prompt += f"Q: {query}\nLet's think step by step:"
-    return prompt
+
+    with open("gsm8k-few-shot.txt", "r", encoding="utf-8") as f:
+        template = f.read()
+    
+    if cot:
+        with open("gsm8k-few-shot-cot.txt", "r", encoding="utf-8") as f:
+            template = f.read()
+            
+
+    filled_prompt = template.replace("{question}", question)
+
+    return filled_prompt
+
+def get_final_answer(text: str) -> str:
+    """
+    Extract the final answer from generated text,
+    assuming it's placed right after '###'.
+
+    Args:
+        text (str): Model-generated output.
+
+    Returns:
+        str: The stripped final answer (string).
+    """
+    if "###" in text:
+        return text.split("###")[-1].strip()
+    return text.strip()
+
 
 # -----------------------------
 # INFERENCE FUNCTION
 # -----------------------------
-def infer(model, tokenizer, prompt, max_tokens=200, temperature=0.7, top_p = 1):
+def infer(model, tokenizer, prompt, max_tokens=200, temperature=0.7, top_p=1.0):
+    """
+    Run inference with conditional decoding:
+    - If temperature > 0: sampling (with top-p).
+    - If temperature == 0: greedy decoding.
+    """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_tokens,
-            temperature=temperature,
-            do_sample=True,
-            top_p=top_p
-        )
-    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return text
+    gen_kwargs = {
+        "max_new_tokens": max_tokens,
+    }
 
-# -----------------------------
-# MAIN
-# -----------------------------
+    if temperature > 0:
+        gen_kwargs.update({
+            "temperature": temperature,
+            "do_sample": True,
+            "top_p": top_p
+        })
+    else:
+        gen_kwargs.update({
+            "do_sample": False  # greedy decoding
+        })
+
+    with torch.no_grad():
+        outputs = model.generate(**inputs, **gen_kwargs)
+
+    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return (text, get_final_answer(text))
+
+
 def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -46,43 +82,52 @@ def main(args):
     model.eval()
 
     # Load queries
-    with open(args.query_file, "r") as f:
+    with open("gsm8k.json", "r") as f:
         queries = json.load(f)  # Expecting list of dicts: {"question":..., "answer":...}
 
     results = []
 
-    # Inference loop
     for q in queries:
-        prompt = cot_prompt(q["question"])
-        pred_text = infer(model, tokenizer, prompt, max_tokens=args.max_length, temperature=args.temperature)
+        prompt = cot_prompt(q["question"], args.cot)
+        
+        pred_text, answer = infer(model, tokenizer, prompt, max_tokens=args.max_length, temperature=args.temperature, top_p = args.top_p )
         pred_answer = pred_text.split("Answer:")[-1].strip() if "Answer:" in pred_text else pred_text.strip()
         results.append({
             "question": q["question"],
             "ground_truth": q["answer"],
-            "prediction": pred_answer
+            "prediction": pred_answer, 
+            "final_answer" : answer, 
+            "is_correct" : answer == q["final_answer"]
         })
 
     # Evaluation
-    for r in results:
-        correct = r["prediction"].lower() == r["ground_truth"].lower()
-        print(f"Q: {r['question']}")
-        print(f"GT: {r['ground_truth']}")
-        print(f"Prediction: {r['prediction']} -> {'Correct' if correct else 'Wrong'}")
-        print("-"*50)
+    total = len(results)
+    num_correct = sum(1 for r in results if r["is_correct"])
+    accuracy = num_correct / total
+    
+    print(f"Accuracy: {num_correct}/{total} = {accuracy:.2%}")
 
     # Save results
-    with open("gsm8k_cot_results.json", "w") as f:
-        json.dump(results, f, indent=2)
+
+    if args.cot:
+        with open(f"gsm8k_cot_results_temp{args.temperature}_topp_{args.top_p}.json", "w") as f:
+            json.dump(results, f, indent=2)
+    else:
+        with open(f"gsm8k_baseline_results_temp{args.temperature}_topp_{args.top_p}.json", "w") as f:
+            json.dump(results, f, indent=2)
+        
 
 
 # -----------------------------
 # ARGPARSE
 # -----------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch inference for GSM8K using CoT.")
+    parser = argparse.ArgumentParser(description="inference for GSM8K using CoT.")
     parser.add_argument("--model_name", type=str, required=True, help="Huggingface model name")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
+    parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
+    parser.add_argument("--top_p", type=float, default=1.0, help="Sampling Top p")
     parser.add_argument("--max_length", type=int, default=200, help="Maximum tokens to generate")
+    parser.add_argument("--cot", action="store_true", help="do cot?")
     args = parser.parse_args()
     
     main(args)
