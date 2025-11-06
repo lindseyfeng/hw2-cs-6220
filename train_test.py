@@ -55,7 +55,7 @@ def main():
     ap.add_argument("--model_name", default="Qwen/Qwen2-0.5B-Instruct")
     ap.add_argument("--out_dir", default="Qwen2-0.5B-DPO")
     ap.add_argument("--epochs", type=int, default=1)
-    ap.add_argument("--per_device_batch_size", type=int, default=2)
+    ap.add_argument("--per_device_batch_size", type=int, default=16)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--lr", type=float, default=5e-6)
     ap.add_argument("--max_len", type=int, default=1024)
@@ -87,6 +87,7 @@ def main():
         logging_steps=10,
         save_strategy="epoch",
         report_to=[],
+        beta=0.05,   
     )
 
     trainer = DPOTrainer(
@@ -94,7 +95,8 @@ def main():
         args=dpo_args,
         processing_class=tok,
         train_dataset=train_ds,
-        ref_model=None,  # default: frozen copy of policy
+        ref_model=None,  
+        
     )
 
     trainer.train()
