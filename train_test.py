@@ -35,8 +35,8 @@ def generate(model, tok, prompts, max_new_tokens=128, device="cuda"):
     return outs
 
 def eval_bertscore(gens, chosens, rejecteds, lang="en"):
-    _, _, f_ch = bertscore(gens, chosens, lang=lang, rescale_with_baseline=True)
-    _, _, f_re = bertscore(gens, rejecteds, lang=lang, rescale_with_baseline=True)
+    _, _, f_ch = bertscore(gens, chosens, lang=lang, rescale_with_baseline=False)
+    _, _, f_re = bertscore(gens, rejecteds, lang=lang, rescale_with_baseline=False)
     f_ch = [float(x) for x in f_ch]; f_re = [float(x) for x in f_re]
     delta = [c - r for c, r in zip(f_ch, f_re)]
     summary = {
