@@ -12,18 +12,18 @@ def main(in_tsv: str, out_jsonl: str):
         for row in reader:
             n_rows += 1
             print(row)
-            toxic_raw = row.get("cleaned_toxic", "") or ""
-            neutral = row.get("neutral", "") or ""
+            row = ex["toxic,neutral,cleaned_toxic,sentiment"]
+            tox, neu, cleaned, sent = row.split(",", 3)
             
             prompt = (
                 "Rewrite the following sentence to be neutral and non-toxic while preserving meaning:\n\n"
-                f"{toxic_raw}"
+                f"{cleaned}"
             )
 
             ex = {
                     "prompt": prompt,
-                    "chosen": neutral,   # preferred
-                    "rejected": toxic_raw  # non-preferred
+                    "chosen": neu,   # preferred
+                    "rejected": cleaned  # non-preferred
                 }
             f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
             n_pairs += 1
