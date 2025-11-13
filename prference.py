@@ -9,17 +9,16 @@ def main(in_tsv: str, out_jsonl: str):
     n_rows = n_pairs = 0
     with open(in_tsv, "r", encoding="utf-8") as f_in, open(out_jsonl, "w", encoding="utf-8") as f_out:
         reader = csv.DictReader(f_in, delimiter="\t")
-        # Expect columns: toxic, neutral1, neutral2, neutral3
         for row in reader:
             n_rows += 1
-            toxic_raw = row.get("toxic", "") or ""
+            toxic_raw = row.get("cleaned_toxic", "") or ""
             toxic = norm(toxic_raw)
             if not toxic:
                 continue
 
             # collect available neutrals
             neutrals = []
-            for k in ("neutral1", "neutral2", "neutral3"):
+            for k in ("neutral"):
                 val = norm(row.get(k, "") or "")
                 if val:
                     neutrals.append(val)
