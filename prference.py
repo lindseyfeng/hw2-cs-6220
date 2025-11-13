@@ -12,7 +12,7 @@ def main(in_tsv: str, out_jsonl: str):
         for row in reader:
             n_rows += 1
             toxic_raw = row.get("cleaned_toxic", "") or ""
-             neutral = row.get("neutral", "") or ""
+            neutral = row.get("neutral", "") or ""
             
             prompt = (
                 "Rewrite the following sentence to be neutral and non-toxic while preserving meaning:\n\n"
