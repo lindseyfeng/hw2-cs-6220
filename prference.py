@@ -12,43 +12,20 @@ def main(in_tsv: str, out_jsonl: str):
         for row in reader:
             n_rows += 1
             toxic_raw = row.get("cleaned_toxic", "") or ""
-            toxic = norm(toxic_raw)
-            if not toxic:
-                continue
-
-            # collect available neutrals
-            neutrals = []
-            for k in ("neutral"):
-                val = norm(row.get(k, "") or "")
-                if val:
-                    neutrals.append(val)
-
-            # dedup neutrals and drop those identical to toxic
-            seen = set()
-            clean_neutrals = []
-            for n in neutrals:
-                if n and n != toxic and n not in seen:
-                    seen.add(n)
-                    clean_neutrals.append(n)
-
-            if not clean_neutrals:
-                continue
-
-            # constant instruction as the prompt (works well for detox tasks)
-            # If you prefer, you can set prompt = toxic (but instruction prompt is more standard for DPO).
+             neutral = row.get("neutral", "") or ""
+            
             prompt = (
                 "Rewrite the following sentence to be neutral and non-toxic while preserving meaning:\n\n"
-                f"{toxic}"
+                f"{toxic_raw}"
             )
 
-            for ntext in clean_neutrals:
-                ex = {
+            ex = {
                     "prompt": prompt,
-                    "chosen": ntext,   # preferred
-                    "rejected": toxic  # non-preferred
+                    "chosen": neutral,   # preferred
+                    "rejected": toxic_raw  # non-preferred
                 }
-                f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
-                n_pairs += 1
+            f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
+            n_pairs += 1
 
     print(f"Processed rows: {n_rows}")
     print(f"Wrote preference pairs: {n_pairs}")
