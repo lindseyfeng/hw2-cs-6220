@@ -11,6 +11,7 @@ def main(in_tsv: str, out_jsonl: str):
         reader = csv.DictReader(f_in, delimiter="\t")
         for row in reader:
             n_rows += 1
+            print(row)
             toxic_raw = row.get("cleaned_toxic", "") or ""
             neutral = row.get("neutral", "") or ""
             
