@@ -14,25 +14,25 @@ def main(in_tsv: str, out_jsonl: str):
             print(row.split(","))
        
 
-            prompt = (
-                "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
-                f"{cleaned}"
-            )
+#             prompt = (
+#                 "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
+#                 f"{cleaned}"
+#             )
 
 
-            ex = {
-                "prompt": prompt,
-                "chosen": neu,       # neutral rewrite
-                "rejected": cleaned  # original toxic
-            }
-            f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
-            n_pairs += 1
+#             ex = {
+#                 "prompt": prompt,
+#                 "chosen": neu,       # neutral rewrite
+#                 "rejected": cleaned  # original toxic
+#             }
+#             f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
+#             n_pairs += 1
 
-    print(f"Processed rows: {n_rows}")
-    print(f"Wrote preference pairs: {n_pairs}")
-    print(f"Output: {out_jsonl}")
+#     print(f"Processed rows: {n_rows}")
+#     print(f"Wrote preference pairs: {n_pairs}")
+#     print(f"Output: {out_jsonl}")
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    args = ap.parse_args()
-    main("para_df_with_sentiment.csv", "preference.jsonl")
+# if __name__ == "__main__":
+#     ap = argparse.ArgumentParser()
+#     args = ap.parse_args()
+#     main("para_df_with_sentiment.csv", "preference.jsonl")
