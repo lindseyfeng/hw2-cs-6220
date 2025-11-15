@@ -1,28 +1,55 @@
 #!/usr/bin/env python3
 # train_dpo.py
-import argparse, os, torch
+
+import argparse
+import os
+import csv
+import json
+
+import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import DPOConfig, DPOTrainer
 from bert_score import score as bertscore
-from detoxify import Detoxify   # <<< NEW
+from detoxify import Detoxify
 
 
+# -------------------------
+# Data split (90% / 10%)
+# -------------------------
 def split_train_eval(jsonl_path):
-    # HF "json" loader supports JSON Lines files directly
+    """
+    Load JSONL file and split 90% / 10% into train / eval.
+    Assumes each row has: prompt, chosen, rejected.
+    """
     ds = load_dataset("json", data_files=jsonl_path, split="train")
     n = len(ds)
     if n < 11:
-        raise ValueError(f"Need ≥11 rows in {jsonl_path}, got {n}.")
+        raise ValueError(f"Need ≥ 11 rows in {jsonl_path}, got {n}.")
+
     for k in ("prompt", "chosen", "rejected"):
         if k not in ds.column_names:
             raise ValueError(f"Missing column '{k}' in JSONL.")
-    return ds.select(range(0, n - 10)), ds.select(range(n - 10, n))
+
+    n_train = int(0.9 * n)
+    if n_train <= 0 or n_train >= n:
+        raise ValueError(f"Bad split: n={n}, n_train={n_train}")
+
+    train_ds = ds.select(range(0, n_train))
+    eval_ds = ds.select(range(n_train, n))
+
+    print(f"Total rows: {n} | Train: {len(train_ds)} | Eval: {len(eval_ds)}")
+    return train_ds, eval_ds
 
 
+# -------------------------
+# Generation helper
+# -------------------------
 def generate(model, tok, prompts, max_new_tokens=128, device="cuda"):
     model.eval()
+    model.to(device)
     outs = []
+
     with torch.no_grad():
         for p in prompts:
             inp = tok(p, return_tensors="pt").to(device)
@@ -37,16 +64,23 @@ def generate(model, tok, prompts, max_new_tokens=128, device="cuda"):
             prompt_len = inp.input_ids.shape[1]
             full = tok.decode(gen, skip_special_tokens=True)
             pref = tok.decode(gen[:prompt_len], skip_special_tokens=True)
-            outs.append(full[len(pref) :].strip() or full.strip())
+            completion = full[len(pref):].strip() or full.strip()
+            outs.append(completion)
+
     return outs
 
 
+# -------------------------
+# BERTScore eval
+# -------------------------
 def eval_bertscore(gens, chosens, rejecteds, lang="en"):
     _, _, f_ch = bertscore(gens, chosens, lang=lang, rescale_with_baseline=False)
     _, _, f_re = bertscore(gens, rejecteds, lang=lang, rescale_with_baseline=False)
+
     f_ch = [float(x) for x in f_ch]
     f_re = [float(x) for x in f_re]
     delta = [c - r for c, r in zip(f_ch, f_re)]
+
     summary = {
         "mean_F1_vs_chosen": sum(f_ch) / len(f_ch),
         "mean_F1_vs_rejected": sum(f_re) / len(f_re),
@@ -58,8 +92,15 @@ def eval_bertscore(gens, chosens, rejecteds, lang="en"):
     return f_ch, f_re, delta, summary
 
 
+# -------------------------
+# Detoxify eval
+# -------------------------
 def eval_toxicity(original_texts, generated_texts, model_name="unbiased"):
-    """Compute average toxicity before/after using Detoxify."""  # <<< NEW
+    """
+    Compute average toxicity before/after using Detoxify.
+    Returns:
+      avg_before, avg_after, tox_before_list, tox_after_list
+    """
     toxic_detector = Detoxify(model_name)  # uses GPU if available
 
     toxic_scores_before = toxic_detector.predict(original_texts)
@@ -74,9 +115,16 @@ def eval_toxicity(original_texts, generated_texts, model_name="unbiased"):
     return avg_before, avg_after, tox_before, tox_after
 
 
+# -------------------------
+# Main
+# -------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--prefs_jsonl", required=True, help="JSONL with fields: prompt, chosen, rejected")
+    ap.add_argument(
+        "--prefs_jsonl",
+        required=True,
+        help="JSONL with fields: prompt, chosen, rejected (and optionally toxicity_field).",
+    )
     ap.add_argument("--model_name", default="Qwen/Qwen2-0.5B-Instruct")
     ap.add_argument("--out_dir", default="Qwen2-0.5B-DPO")
     ap.add_argument("--epochs", type=int, default=1)
@@ -86,28 +134,34 @@ def main():
     ap.add_argument("--max_len", type=int, default=1024)
     ap.add_argument("--eval_max_new_tokens", type=int, default=128)
     ap.add_argument("--bf16", action="store_true")
-    # optional: which field to treat as "original toxic comment"
     ap.add_argument(
         "--toxicity_field",
         type=str,
-        default="prompt",   # <<< NEW: change to 'en_toxic_comment' if your JSONL has that
+        default="prompt",
         help="Column containing the original toxic text for Detoxify evaluation.",
     )
     args = ap.parse_args()
 
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    # 90/10 split
     train_ds, eval_ds = split_train_eval(args.prefs_jsonl)
 
+    # Tokenizer
     tok = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
 
+    # Model
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
         torch_dtype=torch.bfloat16 if (args.bf16 and torch.cuda.is_available()) else None,
-        device_map="auto" if torch.cuda.is_available() else None,
     )
+    if torch.cuda.is_available():
+        model.to("cuda")
 
+    # DPO training config
     dpo_args = DPOConfig(
         output_dir=args.out_dir,
         num_train_epochs=args.epochs,
@@ -123,6 +177,7 @@ def main():
         beta=0.05,
     )
 
+    # DPO Trainer
     trainer = DPOTrainer(
         model=model,
         args=dpo_args,
@@ -131,43 +186,112 @@ def main():
         ref_model=None,
     )
 
+    # -------- Train --------
     trainer.train()
-    trainer.save_model(args.out_dir)
+
+    # -------- Save model + tokenizer (HF-style) --------
+    trainer.save_model(args.out_dir)       # saves config + pytorch_model.bin
     tok.save_pretrained(args.out_dir)
 
+    # -------- Evaluation on held-out 10% --------
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
     prompts = [r["prompt"] for r in eval_ds]
     gens = generate(trainer.model, tok, prompts, args.eval_max_new_tokens, device=device)
     chosens = [r["chosen"] for r in eval_ds]
     rejecteds = [r["rejected"] for r in eval_ds]
 
-    # ---------------- BERTScore eval ----------------
+    # ---- BERTScore ----
     f_ch, f_re, delta, summary = eval_bertscore(gens, chosens, rejecteds, lang="en")
-    print("\n=== BERTScore (10 held-out) ===")
+    print("\n=== BERTScore (held-out 10%) ===")
     for k, v in summary.items():
         print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
     print("\nidx | F1(chosen)  F1(rejected)  Δ")
     for i, (c, r, d) in enumerate(zip(f_ch, f_re, delta)):
         print(f"{i:>3} | {c:.4f}       {r:.4f}        {d:.4f}")
 
-    # ---------------- Detoxify eval ----------------
-    # Use either the 'prompt' column or a dedicated 'en_toxic_comment' field
-    if args.toxicity_field in eval_ds.column_names:       # <<< NEW
+    # ---- Detoxify ----
+    if args.toxicity_field in eval_ds.column_names:
         original_toxic = [r[args.toxicity_field] for r in eval_ds]
     else:
-        # Fallback: treat prompt as original toxic comment
         original_toxic = prompts
 
     avg_before, avg_after, tox_before, tox_after = eval_toxicity(original_toxic, gens)
 
-    print("\n=== Detoxify toxicity (held-out) ===")
+    print("\n=== Detoxify toxicity (held-out 10%) ===")
     print(f"Average toxicity BEFORE (original): {avg_before:.4f}")
     print(f"Average toxicity AFTER  (generated): {avg_after:.4f}")
 
-    # Optional: per-example dump
     print("\nidx | tox_before  tox_after")
     for i, (tb, ta) in enumerate(zip(tox_before, tox_after)):
         print(f"{i:>3} | {tb:.4f}      {ta:.4f}")
+
+    # -------- Save eval examples + metrics to CSV --------
+    csv_path = os.path.join(args.out_dir, "eval_inference_examples.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "idx",
+                "prompt",
+                "chosen",
+                "rejected",
+                "generated",
+                "F1_vs_chosen",
+                "F1_vs_rejected",
+                "delta_F1",
+                "tox_before",
+                "tox_after",
+            ]
+        )
+
+        for i, (row, gen, fc, fr, d, tb, ta) in enumerate(
+            zip(eval_ds, gens, f_ch, f_re, delta, tox_before, tox_after)
+        ):
+            writer.writerow(
+                [
+                    i,
+                    row["prompt"],
+                    row["chosen"],
+                    row["rejected"],
+                    gen,
+                    f"{fc:.6f}",
+                    f"{fr:.6f}",
+                    f"{d:.6f}",
+                    f"{tb:.6f}",
+                    f"{ta:.6f}",
+                ]
+            )
+
+    print(f"\nSaved eval inference examples to: {csv_path}")
+
+    # -------- Save metrics dict as JSON ("model dict") --------
+    metrics = {
+        "model_name": args.model_name,
+        "prefs_jsonl": args.prefs_jsonl,
+        "num_train_samples": len(train_ds),
+        "num_eval_samples": len(eval_ds),
+        "bertscore_summary": summary,
+        "toxicity": {
+            "avg_before": avg_before,
+            "avg_after": avg_after,
+        },
+        "training_args": {
+            "epochs": args.epochs,
+            "per_device_batch_size": args.per_device_batch_size,
+            "grad_accum": args.grad_accum,
+            "lr": args.lr,
+            "max_len": args.max_len,
+            "eval_max_new_tokens": args.eval_max_new_tokens,
+            "bf16": args.bf16,
+        },
+    }
+
+    metrics_path = os.path.join(args.out_dir, "eval_metrics.json")
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved eval metrics dict to: {metrics_path}")
 
 
 if __name__ == "__main__":
