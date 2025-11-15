@@ -42,4 +42,4 @@ def main(in_tsv: str, out_jsonl: str):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     args = ap.parse_args()
-    main("para_df_with_sentiment.tsv", "preference.jsonl")
+    main("para_df_with_sentiment.csv", "preference.jsonl")
