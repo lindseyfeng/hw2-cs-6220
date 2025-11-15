@@ -10,7 +10,7 @@ def main(in_tsv: str, out_jsonl: str):
         for row in reader:
             n_rows += 1
             row = row["toxic,neutral,cleaned_toxic,sentiment"]
-            print(row.split(",", 3))
+            tox, neu, cleaned, sent = row.split(",", 3)
        
 
     #         prompt = (
