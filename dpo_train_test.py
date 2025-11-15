@@ -32,8 +32,6 @@ def split_train_eval(jsonl_path):
             raise ValueError(f"Missing column '{k}' in JSONL.")
 
     n_test = int(0.1 * n)
-    if n_train <= 0 or n_train >= n:
-        raise ValueError(f"Bad split: n={n}, n_train={n_train}")
 
     test_ds = ds.select(range(0, 100))
     eval_ds = ds.select(range(100, n))
