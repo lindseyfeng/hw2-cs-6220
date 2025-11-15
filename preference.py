@@ -11,7 +11,8 @@ def main(in_tsv: str, out_jsonl: str):
             n_rows += 1
             row = row["toxic,neutral,cleaned_toxic,sentiment"]
             # tox, neu, cleaned, sent = row.split(",")
-            print(row.split(","))
+            ls = row.split(",")
+            print(ls)
        
 
 #             prompt = (
