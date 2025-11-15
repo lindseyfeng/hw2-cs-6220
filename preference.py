@@ -10,7 +10,8 @@ def main(in_tsv: str, out_jsonl: str):
         for row in reader:
             n_rows += 1
             row = row["toxic,neutral,cleaned_toxic,sentiment"]
-            tox, neu, cleaned, sent = row.split(",", 3)
+            print(row)
+            tox, neu, cleaned, sent = row.split(",")
 
             prompt = (
                 "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
