@@ -31,12 +31,12 @@ def split_train_eval(jsonl_path):
         if k not in ds.column_names:
             raise ValueError(f"Missing column '{k}' in JSONL.")
 
-    n_train = int(0.9 * n)
+    n_test = int(0.1 * n)
     if n_train <= 0 or n_train >= n:
         raise ValueError(f"Bad split: n={n}, n_train={n_train}")
 
-    train_ds = ds.select(range(0, n_train))
-    eval_ds = ds.select(range(n_train, n))
+    test_ds = ds.select(range(0, n_test))
+    eval_ds = ds.select(range(n_test, n))
 
     print(f"Total rows: {n} | Train: {len(train_ds)} | Eval: {len(eval_ds)}")
     return train_ds, eval_ds
