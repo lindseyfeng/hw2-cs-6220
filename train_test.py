@@ -147,7 +147,6 @@ def main():
         help="JSONL with fields: prompt, chosen, rejected (and optionally toxicity_field).",
     )
     ap.add_argument("--model_name", default="Qwen/Qwen2-0.5B-Instruct")
-    ap.add_argument("--out_dir", default="Qwen2-0.5B-DPO")
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--per_device_batch_size", type=int, default=2)
     ap.add_argument("--grad_accum", type=int, default=64)
@@ -162,12 +161,15 @@ def main():
         help="Column containing the original toxic text for Detoxify evaluation.",
     )
     args = ap.parse_args()
+    
 
     os.makedirs(args.out_dir, exist_ok=True)
 
     # 90/10 split
     train_ds, eval_ds = split_train_eval(args.prefs_jsonl)
-
+    base = args.model_name.split("/")[-1]
+    out_dir = base + "-DPO"
+    
     # Tokenizer
     tok = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
     if tok.pad_token is None:
@@ -184,7 +186,7 @@ def main():
 
     # DPO training config
     dpo_args = DPOConfig(
-        output_dir=args.out_dir,
+        output_dir=out_dir,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.grad_accum,
@@ -302,7 +304,7 @@ def main():
         },
     }
 
-    metrics_path = os.path.join(args.out_dir, "eval_metrics.json")
+    metrics_path = os.path.join(out_dir, "eval_metrics.json")
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
