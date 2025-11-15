@@ -213,8 +213,8 @@ def main():
     trainer.train()
 
     # -------- Save model + tokenizer (HF-style) --------
-    trainer.save_model(args.out_dir)       # saves config + pytorch_model.bin
-    tok.save_pretrained(args.out_dir)
+    trainer.save_model(out_dir)       # saves config + pytorch_model.bin
+    tok.save_pretrained(out_dir)
 
         # -------- Evaluation on held-out 10% --------
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -244,7 +244,7 @@ def main():
     print(f"Average toxicity AFTER  (generated): {avg_after:.4f}")
 
     # -------- Save eval examples + per-example metrics to CSV --------
-    csv_path = os.path.join(args.out_dir, "eval_inference_examples.csv")
+    csv_path = os.path.join(out_dir, "eval_inference_examples.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(
