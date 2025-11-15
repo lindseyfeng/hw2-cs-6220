@@ -9,9 +9,10 @@ def main(in_tsv: str, out_jsonl: str):
         reader = csv.DictReader(f_in, delimiter="\t")
         for row in reader:
             n_rows += 1
-            print(row)
-    #         ls = row.split(",")
-    #         tox, neu, cleaned, sent = row[0], row[1], row[2], row[3]
+            row = row["toxic,neutral,cleaned_toxic,sentiment"]
+            ls = row.split(",")
+            tox, neu, cleaned, sent = row[0], row[1], row[2], row[3]
+            print( tox, neu, cleaned, sent)
        
 
     #         prompt = (
