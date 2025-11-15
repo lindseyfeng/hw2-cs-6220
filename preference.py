@@ -11,6 +11,7 @@ def main(in_tsv: str, out_jsonl: str):
             n_rows += 1
             row = row["toxic,neutral,cleaned_toxic,sentiment"]
             ls = row.split(",", 3)
+            if len(ls) < 4: continue
             tox, neu, cleaned, sent = ls[0], ls[1], ls[2], ls[3]
        
 
