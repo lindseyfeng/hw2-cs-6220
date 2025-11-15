@@ -193,7 +193,7 @@ def main():
     trainer.save_model(args.out_dir)       # saves config + pytorch_model.bin
     tok.save_pretrained(args.out_dir)
 
-    # -------- Evaluation on held-out 10% --------
+        # -------- Evaluation on held-out 10% --------
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     prompts = [r["prompt"] for r in eval_ds]
@@ -205,10 +205,8 @@ def main():
     f_ch, f_re, delta, summary = eval_bertscore(gens, chosens, rejecteds, lang="en")
     print("\n=== BERTScore (held-out 10%) ===")
     for k, v in summary.items():
+        # summary has means and counts
         print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
-    print("\nidx | F1(chosen)  F1(rejected)  Δ")
-    for i, (c, r, d) in enumerate(zip(f_ch, f_re, delta)):
-        print(f"{i:>3} | {c:.4f}       {r:.4f}        {d:.4f}")
 
     # ---- Detoxify ----
     if args.toxicity_field in eval_ds.column_names:
@@ -222,11 +220,7 @@ def main():
     print(f"Average toxicity BEFORE (original): {avg_before:.4f}")
     print(f"Average toxicity AFTER  (generated): {avg_after:.4f}")
 
-    print("\nidx | tox_before  tox_after")
-    for i, (tb, ta) in enumerate(zip(tox_before, tox_after)):
-        print(f"{i:>3} | {tb:.4f}      {ta:.4f}")
-
-    # -------- Save eval examples + metrics to CSV --------
+    # -------- Save eval examples + per-example metrics to CSV --------
     csv_path = os.path.join(args.out_dir, "eval_inference_examples.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -255,23 +249,23 @@ def main():
                     row["chosen"],
                     row["rejected"],
                     gen,
-                    f"{fc:.6f}",
-                    f"{fr:.6f}",
-                    f"{d:.6f}",
-                    f"{tb:.6f}",
-                    f"{ta:.6f}",
+                    float(fc),
+                    float(fr),
+                    float(d),
+                    float(tb),
+                    float(ta),
                 ]
             )
 
     print(f"\nSaved eval inference examples to: {csv_path}")
 
-    # -------- Save metrics dict as JSON ("model dict") --------
+    # -------- Save metrics dict as JSON (averages only) --------
     metrics = {
         "model_name": args.model_name,
         "prefs_jsonl": args.prefs_jsonl,
         "num_train_samples": len(train_ds),
         "num_eval_samples": len(eval_ds),
-        "bertscore_summary": summary,
+        "bertscore_summary": summary,  # only aggregate stats
         "toxicity": {
             "avg_before": avg_before,
             "avg_after": avg_after,
@@ -292,6 +286,7 @@ def main():
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
     print(f"Saved eval metrics dict to: {metrics_path}")
+
 
 
 if __name__ == "__main__":
