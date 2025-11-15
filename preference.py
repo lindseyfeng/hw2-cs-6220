@@ -7,25 +7,31 @@ def main(in_tsv: str, out_jsonl: str):
     n_rows = n_pairs = 0
     with open(in_tsv, "r", encoding="utf-8") as f_in, open(out_jsonl, "w", encoding="utf-8") as f_out:
         reader = csv.DictReader(f_in, delimiter="\t")
+
         for row in reader:
             n_rows += 1
-            row = row["toxic,neutral,cleaned_toxic,sentiment"]
-            ls = row.split(",", 3)
-            if len(ls) < 4: continue
-            tox, neu, cleaned, sent = ls[0], ls[1], ls[2], ls[3]
-       
+
+            # Directly read columns
+            tox = row.get("toxic", "")
+            neu = row.get("neutral", "")
+            cleaned = row.get("cleaned_toxic", "")
+            sent = row.get("sentiment", "")
+
+            # Skip incomplete rows
+            if not (tox and neu and cleaned):
+                continue
 
             prompt = (
                 "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
                 f"{cleaned}"
             )
 
-
             ex = {
                 "prompt": prompt,
-                "chosen": neu,       # neutral rewrite
-                "rejected": cleaned  # original toxic
+                "chosen": neu,      # neutral rewrite
+                "rejected": cleaned # original toxic
             }
+
             f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
             n_pairs += 1
 
@@ -36,4 +42,4 @@ def main(in_tsv: str, out_jsonl: str):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     args = ap.parse_args()
-    main("para_df_with_sentiment.csv", "preference.jsonl")
+    main("para_df_with_sentiment.tsv", "preference.jsonl")
