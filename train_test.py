@@ -42,30 +42,42 @@ def split_train_eval(jsonl_path):
     return train_ds, eval_ds
 
 
-# -------------------------
-# Generation helper
-# -------------------------
-def generate(model, tok, prompts, max_new_tokens=128, device="cuda"):
+def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda"):
+    """
+    Batched deterministic generation with prompt stripping.
+    """
     model.eval()
     model.to(device)
+
     outs = []
+    n = len(prompts)
 
     with torch.no_grad():
-        for p in prompts:
-            inp = tok(p, return_tensors="pt").to(device)
+        for i in range(0, n, batch_size):
+            batch_prompts = prompts[i : i + batch_size]
+
+            # Tokenize batch (pad left)
+            batch_inp = tok(batch_prompts, return_tensors="pt", padding=True).to(device)
+
             gen = model.generate(
-                **inp,
+                **batch_inp,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 pad_token_id=tok.eos_token_id,
                 eos_token_id=tok.eos_token_id,
-            )[0]
-            # strip the prompt from the decoded text to get completion
-            prompt_len = inp.input_ids.shape[1]
-            full = tok.decode(gen, skip_special_tokens=True)
-            pref = tok.decode(gen[:prompt_len], skip_special_tokens=True)
-            completion = full[len(pref):].strip() or full.strip()
-            outs.append(completion)
+            )
+
+            # For each sequence in the batch
+            input_ids = batch_inp.input_ids
+            for j in range(len(batch_prompts)):
+                prompt_len = (input_ids[j] != tok.pad_token_id).sum().item()
+
+                full = tok.decode(gen[j], skip_special_tokens=True)
+                pref = tok.decode(gen[j][:prompt_len], skip_special_tokens=True)
+
+                # Extract completion
+                completion = full[len(pref):].strip() or full.strip()
+                outs.append(completion)
 
     return outs
 
