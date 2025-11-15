@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
 import csv, json, argparse, re
 
 def norm(s: str) -> str:
-    # basic normalization: strip spaces and collapse inner whitespace
     return re.sub(r"\s+", " ", s.strip())
 
 def main(in_tsv: str, out_jsonl: str):
@@ -11,20 +9,20 @@ def main(in_tsv: str, out_jsonl: str):
         reader = csv.DictReader(f_in, delimiter="\t")
         for row in reader:
             n_rows += 1
-            print(row)
             row = row["toxic,neutral,cleaned_toxic,sentiment"]
             tox, neu, cleaned, sent = row.split(",", 3)
-            
+
             prompt = (
-                "Rewrite the following sentence to be neutral and non-toxic while preserving meaning:\n\n"
+                "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
                 f"{cleaned}"
             )
 
+
             ex = {
-                    "prompt": prompt,
-                    "chosen": neu,   # preferred
-                    "rejected": cleaned  # non-preferred
-                }
+                "prompt": prompt,
+                "chosen": neu,       # neutral rewrite
+                "rejected": cleaned  # original toxic
+            }
             f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
             n_pairs += 1
 
