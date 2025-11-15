@@ -161,14 +161,14 @@ def main():
         help="Column containing the original toxic text for Detoxify evaluation.",
     )
     args = ap.parse_args()
-    
 
-    os.makedirs(args.out_dir, exist_ok=True)
-
-    # 90/10 split
     train_ds, eval_ds = split_train_eval(args.prefs_jsonl)
     base = args.model_name.split("/")[-1]
     out_dir = base + "-DPO"
+    
+
+    os.makedirs(out_dir, exist_ok=True)
+
     
     # Tokenizer
     tok = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
