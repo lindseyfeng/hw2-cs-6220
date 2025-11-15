@@ -35,8 +35,8 @@ def split_train_eval(jsonl_path):
     if n_train <= 0 or n_train >= n:
         raise ValueError(f"Bad split: n={n}, n_train={n_train}")
 
-    test_ds = ds.select(range(0, n_test))
-    eval_ds = ds.select(range(n_test, n))
+    test_ds = ds.select(range(0, 100))
+    eval_ds = ds.select(range(100, n))
 
     print(f"Total rows: {n} | Train: {len(train_ds)} | Eval: {len(eval_ds)}")
     return train_ds, eval_ds
