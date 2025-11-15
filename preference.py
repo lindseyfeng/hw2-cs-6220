@@ -9,28 +9,28 @@ def main(in_tsv: str, out_jsonl: str):
         reader = csv.DictReader(f_in, delimiter="\t")
         for row in reader:
             n_rows += 1
-            row = row["toxic,neutral,cleaned_toxic,sentiment"]
-            ls = row.split(",")
-            tox, neu, cleaned, sent = row[0], row[1], row[2], row[3]
+            print(row)
+    #         ls = row.split(",")
+    #         tox, neu, cleaned, sent = row[0], row[1], row[2], row[3]
        
 
-            prompt = (
-                "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
-                f"{cleaned}"
-            )
+    #         prompt = (
+    #             "Rewrite the following sentence to be neutral and non-toxic while preserving its original meaning:\n\n"
+    #             f"{cleaned}"
+    #         )
 
 
-            ex = {
-                "prompt": prompt,
-                "chosen": neu,       # neutral rewrite
-                "rejected": cleaned  # original toxic
-            }
-            f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
-            n_pairs += 1
+    #         ex = {
+    #             "prompt": prompt,
+    #             "chosen": neu,       # neutral rewrite
+    #             "rejected": cleaned  # original toxic
+    #         }
+    #         f_out.write(json.dumps(ex, ensure_ascii=False) + "\n")
+    #         n_pairs += 1
 
-    print(f"Processed rows: {n_rows}")
-    print(f"Wrote preference pairs: {n_pairs}")
-    print(f"Output: {out_jsonl}")
+    # print(f"Processed rows: {n_rows}")
+    # print(f"Wrote preference pairs: {n_pairs}")
+    # print(f"Output: {out_jsonl}")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
