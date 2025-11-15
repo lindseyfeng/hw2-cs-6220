@@ -41,22 +41,31 @@ def split_train_eval(jsonl_path):
     print(f"Total rows: {n} | Train: {len(train_ds)} | Eval: {len(eval_ds)}")
     return train_ds, eval_ds
 
-
 def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda"):
     """
-    Batched deterministic generation with prompt stripping.
+    Batched deterministic generation with prompt stripping + progress countdown.
     """
     model.eval()
     model.to(device)
 
     outs = []
     n = len(prompts)
+    num_batches = (n + batch_size - 1) // batch_size
 
     with torch.no_grad():
-        for i in range(0, n, batch_size):
-            batch_prompts = prompts[i : i + batch_size]
+        for batch_idx in range(num_batches):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, n)
 
-            # Tokenize batch (pad left)
+            batch_prompts = prompts[start:end]
+
+            # Progress log
+            print(
+                f"[Generate] Batch {batch_idx+1}/{num_batches}  "
+                f"(processed {end}/{n})"
+            )
+
+            # Tokenize batch
             batch_inp = tok(batch_prompts, return_tensors="pt", padding=True).to(device)
 
             gen = model.generate(
@@ -67,7 +76,7 @@ def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda
                 eos_token_id=tok.eos_token_id,
             )
 
-            # For each sequence in the batch
+            # For each sequence in the batch, remove prompt prefix
             input_ids = batch_inp.input_ids
             for j in range(len(batch_prompts)):
                 prompt_len = (input_ids[j] != tok.pad_token_id).sum().item()
@@ -75,10 +84,10 @@ def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda
                 full = tok.decode(gen[j], skip_special_tokens=True)
                 pref = tok.decode(gen[j][:prompt_len], skip_special_tokens=True)
 
-                # Extract completion
                 completion = full[len(pref):].strip() or full.strip()
                 outs.append(completion)
 
+    print(f"[Generate] Done! Generated {len(outs)} sequences.\n")
     return outs
 
 
