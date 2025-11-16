@@ -34,7 +34,7 @@ def split_train_eval(jsonl_path):
     n_test = int(0.1 * n)
 
     eval_ds = ds.select(range(0, 100))
-    train_ds = ds.select(range(100, 5000))
+    train_ds = ds.select(range(100, n))
 
     print(f"Total rows: {n} | Train: {len(train_ds)} | Eval: {len(eval_ds)}")
     return train_ds, eval_ds
