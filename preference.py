@@ -32,16 +32,16 @@ def main(in_csv: str, out_jsonl: str, use_sentiment: bool = False):
             else:
                 sentiment_label = "negative"
 
-            # Optional prefix line mentioning sentiment
-            sentiment_str = f"Sentiment: {sentiment_label}\n" if use_sentiment and sent else ""
 
             text = cleaned  # toxic input text
 
             prompt = (
-                f"Rewrite the following toxic text in a neutral style, detoxify it while preserving its "
-                f"{sentiment_label} sentiment:\n"
-                f"{sentiment_str}{text}\nDetoxified:"
+                f"Detoxify the following text while preserving its {sentiment_label} sentiment.\n"
+                f"Return only the detoxified rewrite.\n\n"
+                f"Text: {text}\n\n"
+                f"Detoxified:"
             )
+
 
             ex = {
                 "prompt": prompt,
