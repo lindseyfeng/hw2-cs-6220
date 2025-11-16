@@ -40,9 +40,6 @@ def split_train_eval(jsonl_path):
     return train_ds, eval_ds
 
 def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda"):
-    """
-    Batched deterministic generation with prompt stripping + progress countdown.
-    """
     model.eval()
     model.to(device)
 
@@ -54,39 +51,50 @@ def generate(model, tok, prompts, max_new_tokens=128, batch_size=8, device="cuda
         for batch_idx in range(num_batches):
             start = batch_idx * batch_size
             end = min(start + batch_size, n)
-
             batch_prompts = prompts[start:end]
 
-            # Progress log
             print(
                 f"[Generate] Batch {batch_idx+1}/{num_batches}  "
                 f"(processed {end}/{n})"
             )
 
-            # Tokenize batch
-            batch_inp = tok(batch_prompts, return_tensors="pt", padding=True).to(device)
+            # Build chat-formatted texts for this batch
+            texts = []
+            for p in batch_prompts:
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": p},
+                ]
+                text = tok.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                texts.append(text)
 
-            gen = model.generate(
-                **batch_inp,
+            # Tokenize batch of chat texts
+            model_inputs = tok(texts, return_tensors="pt", padding=True).to(device)
+
+            # Generate
+            generated_ids = model.generate(
+                model_inputs.input_ids,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 pad_token_id=tok.eos_token_id,
                 eos_token_id=tok.eos_token_id,
             )
 
-            # For each sequence in the batch, remove prompt prefix
-            input_ids = batch_inp.input_ids
-            for j in range(len(batch_prompts)):
-                prompt_len = (input_ids[j] != tok.pad_token_id).sum().item()
-
-                full = tok.decode(gen[j], skip_special_tokens=True)
-                pref = tok.decode(gen[j][:prompt_len], skip_special_tokens=True)
-
-                completion = full[len(pref):].strip() or full.strip()
-                outs.append(completion)
+            # Strip the prompt part for each sequence
+            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids):
+                gen_only_ids = output_ids[len(input_ids):]
+                response = tok.batch_decode(
+                    [gen_only_ids], skip_special_tokens=True
+                )[0].strip()
+                outs.append(response)
 
     print(f"[Generate] Done! Generated {len(outs)} sequences.\n")
     return outs
+
 
 
 # -------------------------
