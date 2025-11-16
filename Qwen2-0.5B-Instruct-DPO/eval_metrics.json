@@ -1,19 +1,19 @@
 {
   "model_name": "Qwen/Qwen2-0.5B-Instruct",
   "prefs_jsonl": "preference.jsonl",
-  "num_train_samples": 4900,
+  "num_train_samples": 11827,
   "num_eval_samples": 100,
   "bertscore_summary": {
-    "mean_F1_vs_chosen": 0.8639218240976334,
-    "mean_F1_vs_rejected": 0.8675510156154632,
-    "mean_delta": -0.003629191517829895,
-    "chosen_better_count": 46,
-    "rejected_better_count": 54,
+    "mean_F1_vs_chosen": 0.8670129948854446,
+    "mean_F1_vs_rejected": 0.8606205010414123,
+    "mean_delta": 0.006392493844032288,
+    "chosen_better_count": 65,
+    "rejected_better_count": 35,
     "ties": 0
   },
   "toxicity": {
-    "avg_before": 0.6004301060689613,
-    "avg_after": 0.33217750653158873
+    "avg_before": 0.6004301696131006,
+    "avg_after": 0.15597242188319796
   },
   "training_args": {
     "epochs": 1,
